@@ -2124,6 +2124,7 @@ async def system_config_view(request: Request) -> dict[str, object]:
         """,
         actor.legal_entity_id,
     )
+    request_tenant_legal_entity_id = get_request_tenant_legal_entity_id(request)
     pay_policies = await db.fetch(
         """
         SELECT id, code, name, income_tax_rate, employee_pension_rate

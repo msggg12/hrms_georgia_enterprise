@@ -875,15 +875,40 @@ def _db_error_message(exc: Exception) -> str:
     return 'მონაცემების შენახვა ვერ მოხერხდა. გადაამოწმეთ შეყვანილი მნიშვნელობები.'
 
 
+def _strip_ip_port(value: str) -> str:
+    if value.startswith('['):
+        end = value.find(']')
+        if end != -1:
+            return value[1:end]
+    if value.count(':') == 1 and value.rsplit(':', 1)[1].isdigit():
+        return value.rsplit(':', 1)[0]
+    return value
+
+
+def _normalize_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    address = ipaddress.ip_address(value)
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped
+    return address
+
+
 def _client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get('x-forwarded-for')
-    candidate = forwarded.split(',')[0].strip() if forwarded else (request.client.host if request.client else None)
-    if not candidate:
-        return None
-    try:
-        return str(ipaddress.ip_address(candidate))
-    except ValueError:
-        return None
+    for source in (
+        request.headers.get('x-forwarded-for'),
+        request.headers.get('x-real-ip'),
+        request.client.host if request.client else None,
+    ):
+        if not source:
+            continue
+        candidate = source.split(',')[0].strip()
+        candidate = _strip_ip_port(candidate)
+        if not candidate:
+            continue
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            continue
+    return None
 
 
 def _distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -908,14 +933,25 @@ async def _validate_web_punch(request: Request, db: Database, legal_entity_id: U
     )
     if config is None:
         return False, 'ვებ დაფიქსირება ამ კომპანიისთვის ჯერ არ არის კონფიგურირებული'
-    allowed_ips = [item for item in (config['allowed_web_punch_ips'] or []) if item]
+    allowed_ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for item in (config['allowed_web_punch_ips'] or []):
+        if not item:
+            continue
+        try:
+            allowed_ips.append(_normalize_ip(str(item)))
+        except ValueError:
+            continue
     client_ip = _client_ip(request)
     if allowed_ips:
         if client_ip is None:
             return False, 'მომხმარებლის IP მისამართის განსაზღვრა ვერ მოხერხდა'
-        if client_ip not in allowed_ips:
+        try:
+            normalized_client_ip = _normalize_ip(client_ip)
+        except ValueError:
+            return False, 'მომხმარებლის IP მისამართის განსაზღვრა ვერ მოხერხდა'
+        if normalized_client_ip not in allowed_ips:
             return False, 'თქვენ არ იმყოფებით ნებადართულ საოფისე ქსელში'
-        return True, f'საოფისე IP დადასტურებულია: {client_ip}'
+        return True, f'საოფისე IP დადასტურდა: {client_ip}'
     if config['geofence_latitude'] is not None and config['geofence_longitude'] is not None and config['geofence_radius_meters'] is not None:
         if latitude is None or longitude is None:
             return False, 'ლოკაციით დაფიქსირებისთვის საჭიროა GPS კოორდინატები'
@@ -1439,14 +1475,39 @@ async def import_employees(request: Request, file: UploadFile = File(...), legal
                 await tx.connection.execute(
                     """
                     UPDATE employee_compensation
+                       SET policy_id = $2,
+                           base_salary = $3,
+                           hourly_rate_override = $4,
+                           is_pension_participant = $5,
+                           updated_at = now()
+                     WHERE employee_id = $1
+                       AND effective_to IS NULL
+                       AND effective_from = current_date
+                       AND (
+                            policy_id <> $2
+                            OR base_salary <> $3
+                            OR coalesce(hourly_rate_override, 0) <> coalesce($4::numeric, 0)
+                            OR is_pension_participant <> $5
+                       )
+                    """,
+                    employee_id,
+                    next_policy_id,
+                    next_base_salary,
+                    next_hourly_rate,
+                    next_pension,
+                )
+                await tx.connection.execute(
+                    """
+                    UPDATE employee_compensation
                        SET effective_to = current_date - interval '1 day',
                            updated_at = now()
                      WHERE employee_id = $1
                        AND effective_to IS NULL
+                       AND effective_from < current_date
                        AND (
                             policy_id <> $2
                             OR base_salary <> $3
-                            OR coalesce(hourly_rate_override, 0) <> coalesce($4, 0)
+                            OR coalesce(hourly_rate_override, 0) <> coalesce($4::numeric, 0)
                             OR is_pension_participant <> $5
                        )
                     """,
@@ -1469,7 +1530,7 @@ async def import_employees(request: Request, file: UploadFile = File(...), legal
                            AND effective_to IS NULL
                            AND policy_id = $2
                            AND base_salary = $3
-                           AND coalesce(hourly_rate_override, 0) = coalesce($4, 0)
+                           AND coalesce(hourly_rate_override, 0) = coalesce($4::numeric, 0)
                            AND is_pension_participant = $5
                      )
                     """,
@@ -1646,11 +1707,36 @@ async def update_employee(request: Request, employee_id: UUID, payload: Employee
         await tx.connection.execute(
             """
             UPDATE employee_compensation
+               SET policy_id = $2,
+                   base_salary = $3,
+                   hourly_rate_override = $4,
+                   is_pension_participant = $5,
+                   updated_at = now()
+             WHERE employee_id = $1
+               AND effective_to IS NULL
+               AND effective_from = current_date
+               AND (
+                    policy_id <> $2
+                    OR base_salary <> $3
+                    OR coalesce(hourly_rate_override, 0) <> coalesce($4::numeric, 0)
+                    OR is_pension_participant <> $5
+               )
+            """,
+            employee_id,
+            payload.pay_policy_id,
+            payload.base_salary,
+            payload.hourly_rate_override,
+            payload.is_pension_participant,
+        )
+        await tx.connection.execute(
+            """
+            UPDATE employee_compensation
                SET effective_to = current_date - interval '1 day',
                    updated_at = now()
              WHERE employee_id = $1
                AND effective_to IS NULL
-               AND (policy_id <> $2 OR base_salary <> $3 OR coalesce(hourly_rate_override, 0) <> coalesce($4, 0) OR is_pension_participant <> $5)
+               AND effective_from < current_date
+               AND (policy_id <> $2 OR base_salary <> $3 OR coalesce(hourly_rate_override, 0) <> coalesce($4::numeric, 0) OR is_pension_participant <> $5)
             """,
             employee_id,
             payload.pay_policy_id,
@@ -1671,7 +1757,7 @@ async def update_employee(request: Request, employee_id: UUID, payload: Employee
                    AND effective_to IS NULL
                    AND policy_id = $2
                    AND base_salary = $3
-                   AND coalesce(hourly_rate_override, 0) = coalesce($4, 0)
+                   AND coalesce(hourly_rate_override, 0) = coalesce($4::numeric, 0)
                    AND is_pension_participant = $5
              )
             """,
@@ -2943,6 +3029,15 @@ async def upsert_system_config(request: Request, legal_entity_id: UUID, payload:
     if actor.legal_entity_id != legal_entity_id and 'ADMIN' not in actor.role_codes:
         raise HTTPException(status_code=403, detail='სხვა იურიდიული ერთეულის კონფიგურაციის შეცვლა აკრძალულია')
     db = get_db_from_request(request)
+    normalized_allowed_web_punch_ips: list[str] = []
+    for ip_value in payload.allowed_web_punch_ips:
+        if not ip_value:
+            continue
+        try:
+            normalized_allowed_web_punch_ips.append(str(_normalize_ip(ip_value)))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f'Invalid IP address: {ip_value}')
+
     if payload.trade_name:
         await db.execute(
             'UPDATE legal_entities SET trade_name = $2, updated_at = now() WHERE id = $1',
@@ -2972,7 +3067,7 @@ async def upsert_system_config(request: Request, legal_entity_id: UUID, payload:
         payload.logo_text,
         payload.primary_color,
         payload.standalone_chat_url,
-        payload.allowed_web_punch_ips,
+        normalized_allowed_web_punch_ips,
         payload.geofence_latitude,
         payload.geofence_longitude,
         payload.geofence_radius_meters,
