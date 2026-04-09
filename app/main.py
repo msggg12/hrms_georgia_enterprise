@@ -911,6 +911,29 @@ def _client_ip(request: Request) -> str | None:
     return None
 
 
+def _request_host_ip(request: Request) -> str | None:
+    host_header = request.headers.get('x-forwarded-host') or request.headers.get('host')
+    if not host_header:
+        return None
+    candidate = host_header.split(',')[0].strip()
+    candidate = _strip_ip_port(candidate)
+    if not candidate:
+        return None
+    if candidate.lower() == 'localhost':
+        return '127.0.0.1'
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def _is_local_bridge_ip(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return bool(
+        (isinstance(address, ipaddress.IPv4Address) and (address.is_private or address.is_loopback))
+        or (isinstance(address, ipaddress.IPv6Address) and (address.is_private or address.is_loopback))
+    )
+
+
 def _distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius = 6371000.0
     phi1 = math.radians(lat1)
@@ -950,6 +973,14 @@ async def _validate_web_punch(request: Request, db: Database, legal_entity_id: U
         except ValueError:
             return False, 'მომხმარებლის IP მისამართის განსაზღვრა ვერ მოხერხდა'
         if normalized_client_ip not in allowed_ips:
+            request_host_ip = _request_host_ip(request)
+            if request_host_ip is not None:
+                try:
+                    normalized_request_host_ip = _normalize_ip(request_host_ip)
+                except ValueError:
+                    normalized_request_host_ip = None
+                if normalized_request_host_ip is not None and normalized_request_host_ip in allowed_ips and _is_local_bridge_ip(_normalize_ip(client_ip)):
+                    return True, f'საოფისე IP დადასტურდა: {client_ip}'
             return False, 'თქვენ არ იმყოფებით ნებადართულ საოფისე ქსელში'
         return True, f'საოფისე IP დადასტურდა: {client_ip}'
     if config['geofence_latitude'] is not None and config['geofence_longitude'] is not None and config['geofence_radius_meters'] is not None:

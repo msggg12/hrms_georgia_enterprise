@@ -20,7 +20,7 @@ function StatTile(props: { label: string; value: number; icon: typeof Users; ton
   )
 }
 
-export function MetricCards(props: { summary: Summary | null }) {
+export function MetricCards(props: { summary: Summary | null; onViewAttendance?: () => void }) {
   const summary = props.summary ?? {
     active_employees: 0,
     terminated_employees: 0,
@@ -45,7 +45,19 @@ export function MetricCards(props: { summary: Summary | null }) {
             <StatTile label={ka.activeEmployees} value={summary.active_employees} icon={Users} tone="bg-amber-50 text-amber-500" delta="30%" />
             <StatTile label={ka.terminatedEmployees} value={summary.terminated_employees} icon={BriefcaseBusiness} tone="bg-sky-50 text-sky-500" delta="22%" />
             <StatTile label={ka.pendingApprovals} value={summary.pending_approvals} icon={BadgeCheck} tone="bg-indigo-50 text-indigo-500" delta="18%" />
-            <StatTile label={ka.onlineDevices} value={summary.online_devices} icon={Fingerprint} tone="bg-pink-50 text-pink-500" delta="12%" />
+            <div className="rounded-[18px] border border-slate-100 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-50 text-pink-500">
+                  <Fingerprint className="h-5 w-5" />
+                </div>
+                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-600">12%</span>
+              </div>
+              <p className="mt-5 text-[30px] font-semibold tracking-[-0.03em] text-slate-900">{summary.online_devices}</p>
+              <p className="mt-1 text-sm text-slate-500">{ka.onlineEmployees}</p>
+              <button type="button" onClick={props.onViewAttendance} className="mt-4 text-xs font-semibold text-indigo-600 hover:text-indigo-700" hidden={!props.onViewAttendance}>
+                {ka.viewCheckIns}
+              </button>
+            </div>
           </div>
 
           <div className="min-w-0 rounded-[22px] border border-slate-100 bg-white px-5 py-4 xl:w-[43%]">

@@ -81,7 +81,7 @@ export type BootstrapData = {
 }
 
 export type FeedEvent = {
-  event_type: 'attendance' | 'device'
+  event_type: 'attendance' | 'device' | 'web_punch'
   event_id: string
   ts: string
   direction: string

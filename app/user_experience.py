@@ -650,7 +650,25 @@ async def attendance_live_feed(request: Request) -> list[dict[str, object]]:
           JOIN employees e ON e.id = ral.employee_id
           JOIN device_registry dr ON dr.id = ral.device_id
          WHERE e.legal_entity_id = $1
-         ORDER BY ral.event_ts DESC
+
+        UNION ALL
+
+        SELECT 'web_punch' AS event_type,
+               wpe.id::text AS event_id,
+               wpe.punch_ts AS ts,
+               wpe.direction::text AS direction,
+               e.id AS employee_id,
+               e.first_name,
+               e.last_name,
+               e.employee_number,
+               'Web Punch' AS device_name,
+               coalesce(wpe.source_ip, 'Web') AS host,
+               NULL::text AS device_status
+          FROM web_punch_events wpe
+          JOIN employees e ON e.id = wpe.employee_id
+         WHERE wpe.legal_entity_id = $1
+           AND wpe.is_valid = true
+         ORDER BY ts DESC
          LIMIT 20
         """,
         actor.legal_entity_id,

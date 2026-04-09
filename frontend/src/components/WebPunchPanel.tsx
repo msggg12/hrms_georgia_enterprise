@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Globe, MapPinned, ShieldCheck } from 'lucide-react'
 
@@ -11,16 +11,39 @@ type WebPunchPanelProps = {
 }
 
 export function WebPunchPanel(props: WebPunchPanelProps) {
-  const [direction, setDirection] = useState('auto')
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
   const [busy, setBusy] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+
+  const latestValidPunch = useMemo(() => {
+    return props.data?.recent_punches.find((item) => item.is_valid) ?? null
+  }, [props.data?.recent_punches])
+
+  const isCurrentlyCheckedIn = latestValidPunch?.direction === 'in'
+  const currentDirection = isCurrentlyCheckedIn ? 'out' : 'in'
+  const checkInTime = isCurrentlyCheckedIn ? new Date(latestValidPunch.punch_ts) : null
+
+  useEffect(() => {
+    if (!checkInTime) {
+      setElapsedSeconds(0)
+      return undefined
+    }
+
+    const updateElapsed = () => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - checkInTime.getTime()) / 1000)))
+    }
+
+    updateElapsed()
+    const timer = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(timer)
+  }, [checkInTime])
 
   async function handleSubmit() {
     setBusy(true)
     try {
       await props.onSubmit({
-        direction,
+        direction: currentDirection,
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null
       })
@@ -49,17 +72,31 @@ export function WebPunchPanel(props: WebPunchPanelProps) {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.85fr)_minmax(320px,1fr)]">
         <div className="rounded-[28px] border border-slatepro-100 bg-white p-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            <select className="input-shell" value={direction} onChange={(event) => setDirection(event.target.value)}>
-              <option value="auto">ჭკვიანი (პირველი = შესვლა, მეორე = გასვლა)</option>
-              <option value="in">შესვლა</option>
-              <option value="out">გასვლა</option>
-            </select>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-slatepro-200 bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-[0.32em] text-slatepro-500">სტატუსი</p>
+              <p className="mt-2 text-sm font-semibold text-navy-900">
+                {isCurrentlyCheckedIn ? 'Checked in' : 'Checked out'}
+              </p>
+              {isCurrentlyCheckedIn && checkInTime ? (
+                <p className="mt-2 text-xs text-slatepro-500">დაწყებულია {formatDateTime(checkInTime.toISOString())}</p>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slatepro-200 bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-[0.32em] text-slatepro-500">Timer</p>
+              <p className="mt-2 text-sm font-semibold text-navy-900">
+                {isCurrentlyCheckedIn
+                  ? `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0')}:${String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, '0')}:${String(elapsedSeconds % 60).padStart(2, '0')}`
+                  : '--:--:--'}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 mt-4">
             <input className="input-shell" value={latitude} onChange={(event) => setLatitude(event.target.value)} placeholder="Latitude" />
             <input className="input-shell" value={longitude} onChange={(event) => setLongitude(event.target.value)} placeholder="Longitude" />
           </div>
           <button type="button" className="brand-button mt-4 rounded-2xl px-4 py-3 font-semibold text-white" onClick={() => void handleSubmit()} disabled={busy}>
-            {busy ? 'იგზავნება...' : 'Punch გაგზავნა'}
+            {busy ? 'იგზავნება...' : isCurrentlyCheckedIn ? 'გასვლა' : 'შემოსვლა'}
           </button>
         </div>
 

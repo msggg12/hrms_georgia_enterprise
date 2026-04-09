@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useDeferredValue, useEffect, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 
 import { Bell, Fingerprint, Menu } from 'lucide-react'
 
@@ -60,6 +60,13 @@ import type {
   WidgetData
 } from './types'
 import { defaultDraft, findShiftSegment } from './utils'
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
 
 type LoginState = {
   username: string
@@ -260,7 +267,35 @@ export function App() {
   const [webPunchData, setWebPunchData] = useState<WebPunchConfigData | null>(null)
   const [vacancyData, setVacancyData] = useState<VacancyData | null>(null)
   const [warehouseData, setWarehouseData] = useState<WarehouseData | null>(null)
+  const [topElapsedSeconds, setTopElapsedSeconds] = useState(0)
+
+  const latestValidWebPunch = useMemo(
+    () => webPunchData?.recent_punches.find((item) => item.is_valid) ?? null,
+    [webPunchData?.recent_punches],
+  )
+  const isTopCheckedIn = latestValidWebPunch?.direction === 'in'
+  const topCheckInTime = useMemo(
+    () => (isTopCheckedIn && latestValidWebPunch?.punch_ts ? new Date(latestValidWebPunch.punch_ts) : null),
+    [isTopCheckedIn, latestValidWebPunch?.punch_ts],
+  )
+  const topWebPunchButtonLabel = isTopCheckedIn ? 'Web Check-Out' : 'Web Check-In'
+  const topWebPunchTimerLabel = isTopCheckedIn ? 'Checked in' : 'Checked out'
   const [performanceHub, setPerformanceHub] = useState<PerformanceHubData | null>(null)
+
+  useEffect(() => {
+    if (!topCheckInTime) {
+      setTopElapsedSeconds(0)
+      return undefined
+    }
+
+    const updateTopElapsed = () => {
+      setTopElapsedSeconds(Math.max(0, Math.floor((Date.now() - topCheckInTime.getTime()) / 1000)))
+    }
+
+    updateTopElapsed()
+    const timer = window.setInterval(updateTopElapsed, 1000)
+    return () => window.clearInterval(timer)
+  }, [topCheckInTime])
   const [payrollHub, setPayrollHub] = useState<PayrollHubData | null>(null)
   const [systemConfig, setSystemConfig] = useState<SystemConfigData | null>(null)
   const [deviceRegistry, setDeviceRegistry] = useState<DeviceRegistryData | null>(null)
@@ -344,6 +379,12 @@ export function App() {
     const formOptions = await getJson<EmployeeFormOptions>('/ux/employee-form-options')
     setOptions(formOptions)
     return formOptions
+  }
+
+  async function loadWebPunchData() {
+    const webPunch = await getJson<WebPunchConfigData>('/ux/web-punch-config')
+    setWebPunchData(webPunch)
+    return webPunch
   }
 
   async function loadStaticPanels() {
@@ -954,7 +995,7 @@ export function App() {
   async function submitWebPunch(payload: { direction: string; latitude: number | null; longitude: number | null }) {
     try {
       await postJson('/attendance/web-punch', payload)
-      await Promise.all([loadAttendanceControlData(), loadLivePanels()])
+      await Promise.all([loadAttendanceControlData(), loadLivePanels(), loadWebPunchData()])
       setError('')
     } catch (err) {
       setError((err as Error).message)
@@ -964,8 +1005,9 @@ export function App() {
 
   async function headerWebCheckIn() {
     try {
-      await submitWebPunch({ direction: 'auto', latitude: null, longitude: null })
-      setNotice('Web Check-In ჩაიწერა (ჭკვიანი მიმართულება)')
+      const direction = isTopCheckedIn ? 'out' : 'in'
+      await submitWebPunch({ direction, latitude: null, longitude: null })
+      setNotice(direction === 'in' ? 'Web Check-In ჩაიწერა' : 'Web Check-Out ჩაიწერა')
     } catch {
       /* toast via submitWebPunch error path */
     }
@@ -1265,7 +1307,7 @@ export function App() {
       case 'dashboard':
         return (
           <div className="space-y-6">
-            <MetricCards summary={summary} />
+            <MetricCards summary={summary} onViewAttendance={() => setActiveSection('attendance')} />
             {adminMode ? (
               <>
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
@@ -1482,10 +1524,13 @@ export function App() {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                <div className="hidden sm:flex sm:flex-col sm:text-right sm:text-xs sm:text-slate-500">
+                {isTopCheckedIn ? `Checked in ${formatDuration(topElapsedSeconds)}` : 'Checked out'}
+              </div>
               <button type="button" className="primary-btn px-3 py-2.5 text-sm sm:px-5" onClick={() => void headerWebCheckIn()}>
                 <Fingerprint className="h-4 w-4" />
-                <span className="hidden sm:inline">Web Check-In</span>
-                <span className="sm:hidden">Check-In</span>
+                <span className="hidden sm:inline">{topWebPunchButtonLabel}</span>
+                <span className="sm:hidden">{isTopCheckedIn ? 'Check-Out' : 'Check-In'}</span>
               </button>
               <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50">
                 <Bell className="h-4 w-4" />
