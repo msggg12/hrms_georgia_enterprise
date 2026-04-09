@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HRMS ESS Demo</title>
+  <link rel="stylesheet" href="/static/ess.css" />
+</head>
+<body class="theme-dark">
+  <div class="app-shell">
+    <div class="toolbar">
+      <div class="brand">HRMS ESS Portal</div>
+      <div class="actions">
+        <a class="button" href="/monitoring/healthz">Health</a>
+        <a class="button primary" href="/ux/dashboard/preferences">My Widgets</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section class="widget span-4">
+        <h2>Pending Approvals</h2>
+        <div class="metric">4</div>
+        <p>Leave requests and expense claims waiting for action.</p>
+      </section>
+
+      <section class="widget span-4">
+        <h2>My KPI Progress</h2>
+        <div class="progress"><span></span></div>
+        <p>72% of quarterly objectives completed.</p>
+      </section>
+
+      <section class="widget span-4">
+        <h2>Presence</h2>
+        <p><span class="tag">Clocked in</span></p>
+        <p>Employee ID: {{ employee_id }}</p>
+      </section>
+
+      <section class="widget span-8">
+        <h2>Team Calendar</h2>
+        <table class="table">
+          <thead>
+            <tr><th>Date</th><th>Event</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Monday</td><td>Ana on leave</td><td class="status-danger">Out</td></tr>
+            <tr><td>Tuesday</td><td>IT onboarding</td><td class="status-good">Planned</td></tr>
+            <tr><td>Wednesday</td><td>Performance review</td><td>Scheduled</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="widget span-4">
+        <h2>Recruitment Kanban</h2>
+        <ul>
+          <li>Draft: 2 vacancies</li>
+          <li>Published: 5 vacancies</li>
+          <li>Interview: 3 vacancies</li>
+          <li>Offer: 1 vacancy</li>
+          <li>Hired: 2 vacancies</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

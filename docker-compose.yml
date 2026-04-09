@@ -1,0 +1,130 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hrms
+      POSTGRES_USER: hrms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hrms -d hrms"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://hrms:${POSTGRES_PASSWORD:-hrms}@db:5432/hrms
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000,http://localhost:3000}
+      ENABLE_BACKGROUND_JOBS: "true"
+      ENABLE_DEVICE_WORKERS: "true"
+      ENABLE_OPS_WORKERS: "true"
+      ENABLE_NODE_HEARTBEAT: "true"
+      JWT_SECRET: ${JWT_SECRET:-change-me-before-production}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_TTL_MINUTES: 60
+      REFRESH_TOKEN_TTL_MINUTES: 10080
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-hrms@example.ge}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      NODE_CODE: ${NODE_CODE:-cluster-node-1}
+      NODE_ROLE: api
+      NODE_REGION: ${NODE_REGION:-georgia}
+      SUPERADMIN_COMPANY_NAME: ${SUPERADMIN_COMPANY_NAME:-Georgia Enterprise Holding}
+      SUPERADMIN_COMPANY_TRADE_NAME: ${SUPERADMIN_COMPANY_TRADE_NAME:-Georgia Enterprise}
+      SUPERADMIN_COMPANY_TAX_ID: ${SUPERADMIN_COMPANY_TAX_ID:-GE-000000001}
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-superadmin}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-ChangeMe123!}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@example.ge}
+      SUPERADMIN_FIRST_NAME: ${SUPERADMIN_FIRST_NAME:-System}
+      SUPERADMIN_LAST_NAME: ${SUPERADMIN_LAST_NAME:-Administrator}
+      SUPERADMIN_PERSONAL_NUMBER: ${SUPERADMIN_PERSONAL_NUMBER:-00000000000}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/monitoring/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "9100:9100"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      app:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployment/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployment/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
