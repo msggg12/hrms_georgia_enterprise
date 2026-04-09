@@ -1,7 +1,7 @@
 import { BadgeCheck, BriefcaseBusiness, Fingerprint, Users } from 'lucide-react'
 
 import { ka } from '../i18n/ka'
-import type { Summary } from '../types'
+import type { Summary, WeeklyAttendancePoint } from '../types'
 
 function StatTile(props: { label: string; value: number; icon: typeof Users; tone: string; delta: string }) {
   const Icon = props.icon
@@ -20,22 +20,17 @@ function StatTile(props: { label: string; value: number; icon: typeof Users; ton
   )
 }
 
-export function MetricCards(props: { summary: Summary | null; onViewAttendance?: () => void }) {
+export function MetricCards(props: { summary: Summary | null; weeklyAttendance?: WeeklyAttendancePoint[]; onViewAttendance?: () => void }) {
   const summary = props.summary ?? {
     active_employees: 0,
     terminated_employees: 0,
     pending_approvals: 0,
     online_devices: 0
   }
-  const chartSeries = [
-    Math.max(18, (summary.active_employees % 90) + 18),
-    Math.max(18, ((summary.pending_approvals * 9) % 90) + 22),
-    Math.max(18, ((summary.online_devices * 12) % 90) + 30),
-    Math.max(18, ((summary.terminated_employees * 10) % 90) + 16),
-    Math.max(18, ((summary.active_employees + summary.online_devices) % 90) + 20),
-    Math.max(18, ((summary.pending_approvals + summary.terminated_employees) % 90) + 12),
-    Math.max(18, ((summary.active_employees + summary.pending_approvals) % 90) + 14)
-  ]
+  const weeklyAttendance = props.weeklyAttendance ?? []
+  const maxCount = Math.max(1, ...weeklyAttendance.map((item) => item.count))
+  const chartSeries = weeklyAttendance.length > 0 ? weeklyAttendance.map((item) => item.count) : [0, 0, 0, 0, 0, 0, 0]
+  const labels = weeklyAttendance.length > 0 ? weeklyAttendance.map((item) => item.label) : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_320px]">
@@ -71,12 +66,11 @@ export function MetricCards(props: { summary: Summary | null; onViewAttendance?:
             <div className="flex h-36 items-end gap-3">
               {chartSeries.map((value, index) => (
                 <div key={index} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-xl bg-indigo-100" style={{ height: `${value}px` }}>
-                    <div className="w-full bg-indigo-700" style={{ height: `${Math.max(18, value * 0.52)}px` }} />
-                    <div className="w-full bg-sky-500" style={{ height: `${Math.max(10, value * 0.2)}px` }} />
-                    <div className="w-full bg-amber-400" style={{ height: `${Math.max(8, value * 0.16)}px` }} />
+                  <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-xl bg-indigo-100" style={{ height: `${Math.max(18, (value / maxCount) * 100)}px` }}>
+                    <div className="w-full rounded-t-xl bg-indigo-700" style={{ height: `${Math.max(18, (value / maxCount) * 100)}px` }} />
                   </div>
-                  <span className="text-xs text-slate-400">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index]}</span>
+                  <span className="text-xs text-slate-400">{labels[index]}</span>
+                  <span className="text-[11px] text-slate-500">{value}</span>
                 </div>
               ))}
             </div>

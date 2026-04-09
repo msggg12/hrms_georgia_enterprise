@@ -57,6 +57,7 @@ import type {
   VacancyData,
   WebPunchConfigData,
   WarehouseData,
+  WeeklyAttendancePoint,
   WidgetData
 } from './types'
 import { defaultDraft, findShiftSegment } from './utils'
@@ -267,6 +268,7 @@ export function App() {
   const [webPunchData, setWebPunchData] = useState<WebPunchConfigData | null>(null)
   const [vacancyData, setVacancyData] = useState<VacancyData | null>(null)
   const [warehouseData, setWarehouseData] = useState<WarehouseData | null>(null)
+  const [weeklyAttendance, setWeeklyAttendance] = useState<WeeklyAttendancePoint[]>([])
   const [topElapsedSeconds, setTopElapsedSeconds] = useState(0)
 
   const latestValidWebPunch = useMemo(
@@ -429,6 +431,7 @@ export function App() {
     ])
     setBootstrap(bootstrapData)
     setSummary(homeData.summary)
+    setWeeklyAttendance(homeData.weekly_attendance)
     setAnalytics(analyticsData)
     setAtsBoard(atsData)
     setCelebrationData(celebrationHub)
@@ -457,6 +460,7 @@ export function App() {
     ])
     setBootstrap(bootstrapData)
     setSummary(homeData.summary)
+    setWeeklyAttendance(homeData.weekly_attendance)
     setLeaveData(leaveSelfService)
     setTeamChatConfig(teamChat)
     setPersonalReports(personalReportsData)
@@ -1307,7 +1311,7 @@ export function App() {
       case 'dashboard':
         return (
           <div className="space-y-6">
-            <MetricCards summary={summary} onViewAttendance={() => setActiveSection('attendance')} />
+            <MetricCards summary={summary} weeklyAttendance={weeklyAttendance} onViewAttendance={() => setActiveSection('attendance')} />
             {adminMode ? (
               <>
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">

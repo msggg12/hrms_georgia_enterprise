@@ -5,8 +5,14 @@ export type Summary = {
   online_devices: number
 }
 
+export type WeeklyAttendancePoint = {
+  label: string
+  count: number
+}
+
 export type WidgetData = {
   summary: Summary
+  weekly_attendance: WeeklyAttendancePoint[]
 }
 
 export type GridItem = {

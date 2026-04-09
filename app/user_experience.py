@@ -307,6 +307,42 @@ async def home_data(request: Request) -> dict[str, object]:
         """,
         actor.legal_entity_id,
     )
+    weekly_rows = await db.fetch(
+        """
+        SELECT work_date,
+               count(DISTINCT employee_id) AS checked_in
+          FROM (
+                 SELECT ral.employee_id,
+                        (ral.event_ts AT TIME ZONE 'Asia/Tbilisi')::date AS work_date
+                   FROM raw_attendance_logs ral
+                   JOIN employees e ON e.id = ral.employee_id
+                  WHERE e.legal_entity_id = $1
+                    AND (ral.event_ts AT TIME ZONE 'Asia/Tbilisi')::date BETWEEN date_trunc('week', now() AT TIME ZONE 'Asia/Tbilisi')::date
+                        AND date_trunc('week', now() AT TIME ZONE 'Asia/Tbilisi')::date + interval '6 days'
+                    AND ral.direction::text = 'in'
+                 UNION
+                 SELECT wpe.employee_id,
+                        (wpe.punch_ts AT TIME ZONE 'Asia/Tbilisi')::date AS work_date
+                   FROM web_punch_events wpe
+                  WHERE wpe.legal_entity_id = $1
+                    AND wpe.is_valid = true
+                    AND (wpe.punch_ts AT TIME ZONE 'Asia/Tbilisi')::date BETWEEN date_trunc('week', now() AT TIME ZONE 'Asia/Tbilisi')::date
+                        AND date_trunc('week', now() AT TIME ZONE 'Asia/Tbilisi')::date + interval '6 days'
+             ) t
+         GROUP BY work_date
+         ORDER BY work_date
+        """,
+        actor.legal_entity_id,
+    )
+    week_start = date.today() - timedelta(days=date.today().weekday())
+    attendance_map = {row['work_date']: int(row['checked_in'] or 0) for row in weekly_rows}
+    weekly_attendance = [
+        {
+            'label': GEORGIAN_WEEKDAY_LABELS[(week_start + timedelta(days=i)).isoweekday()],
+            'count': attendance_map.get(week_start + timedelta(days=i), 0),
+        }
+        for i in range(7)
+    ]
     preferences = await dashboard_preferences(request)
     return {
         'summary': {
@@ -315,6 +351,7 @@ async def home_data(request: Request) -> dict[str, object]:
             'pending_approvals': int(pending_approvals or 0),
             'online_devices': int(online_devices or 0),
         },
+        'weekly_attendance': weekly_attendance,
         'widgets': widgets,
         'preferences': preferences,
     }
