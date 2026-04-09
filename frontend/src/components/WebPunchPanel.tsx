@@ -11,7 +11,7 @@ type WebPunchPanelProps = {
 }
 
 export function WebPunchPanel(props: WebPunchPanelProps) {
-  const [direction, setDirection] = useState('in')
+  const [direction, setDirection] = useState('auto')
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
   const [busy, setBusy] = useState(false)
@@ -51,8 +51,9 @@ export function WebPunchPanel(props: WebPunchPanelProps) {
         <div className="rounded-[28px] border border-slatepro-100 bg-white p-5">
           <div className="grid gap-4 md:grid-cols-3">
             <select className="input-shell" value={direction} onChange={(event) => setDirection(event.target.value)}>
-              <option value="in">Entry</option>
-              <option value="out">Exit</option>
+              <option value="auto">ჭკვიანი (პირველი = შესვლა, მეორე = გასვლა)</option>
+              <option value="in">შესვლა</option>
+              <option value="out">გასვლა</option>
             </select>
             <input className="input-shell" value={latitude} onChange={(event) => setLatitude(event.target.value)} placeholder="Latitude" />
             <input className="input-shell" value={longitude} onChange={(event) => setLongitude(event.target.value)} placeholder="Longitude" />

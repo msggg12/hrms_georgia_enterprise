@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from .api_support import get_db_from_request, get_request_tenant_legal_entity_id, require_actor
 from .config import settings
 from .labor_engine import _fetch_resolved_shifts
+from .rbac import can_edit_shift_schedule
 from .tenant import DEFAULT_FEATURE_FLAGS
 
 UX_ROUTER = APIRouter(prefix='/ux', tags=['ux'])
@@ -102,6 +103,27 @@ def _calendar_title(value: date) -> str:
 def _week_bucket_key(value: date) -> str:
     week_start = value - timedelta(days=value.weekday())
     return week_start.isoformat()
+
+
+async def _week_planned_minutes_fixed_weekly(db, employee_id: UUID, anchor: date) -> int:
+    """Approximate scheduled minutes in the ISO week (Mon–Sun) containing anchor; fixed_weekly-accurate."""
+    week_start = anchor - timedelta(days=anchor.weekday())
+    week_end = week_start + timedelta(days=6)
+    row = await db.fetchrow(
+        """
+        SELECT coalesce(sum(sps.planned_minutes), 0)::bigint AS minutes
+          FROM assigned_shifts a
+          JOIN shift_pattern_segments sps
+            ON sps.shift_pattern_id = a.shift_pattern_id
+           AND sps.day_index = extract(isodow from a.effective_from)::int
+         WHERE a.employee_id = $1
+           AND a.effective_from BETWEEN $2 AND $3
+        """,
+        employee_id,
+        week_start,
+        week_end,
+    )
+    return int(row['minutes'] or 0) if row else 0
 
 
 @UX_ROUTER.get('/bootstrap')
@@ -304,6 +326,10 @@ async def employees_grid(
     search: str | None = None,
     status_filter: str | None = None,
     department_id: UUID | None = None,
+    email_contains: str | None = None,
+    phone_contains: str | None = None,
+    salary_min: Decimal | None = None,
+    salary_max: Decimal | None = None,
     sort_by: Literal['employee_number', 'full_name', 'department_name', 'job_title', 'employment_status', 'hire_date'] = 'employee_number',
     sort_direction: Literal['asc', 'desc'] = 'asc',
     page: int = 1,
@@ -325,19 +351,38 @@ async def employees_grid(
     }
     order_by = sortable_columns[sort_by]
     direction = 'DESC' if sort_direction == 'desc' else 'ASC'
+    q = f'%{search.strip()}%' if search else None
+    em = f'%{email_contains.strip()}%' if email_contains else None
+    ph = f'%{phone_contains.strip()}%' if phone_contains else None
     total_count = await db.fetchval(
         """
         SELECT count(*)
           FROM employees e
+          LEFT JOIN LATERAL (
+              SELECT base_salary
+                FROM employee_compensation
+               WHERE employee_id = e.id
+               ORDER BY effective_from DESC
+               LIMIT 1
+          ) ec ON true
          WHERE e.legal_entity_id = $1
-           AND ($2::text IS NULL OR e.first_name ILIKE $2 OR e.last_name ILIKE $2 OR e.employee_number ILIKE $2)
+           AND ($2::text IS NULL OR e.first_name ILIKE $2 OR e.last_name ILIKE $2
+                OR e.employee_number ILIKE $2 OR e.email ILIKE $2 OR e.mobile_phone ILIKE $2)
            AND ($3::text IS NULL OR e.employment_status::text = $3)
            AND ($4::uuid IS NULL OR e.department_id = $4)
+           AND ($5::text IS NULL OR e.email ILIKE $5)
+           AND ($6::text IS NULL OR e.mobile_phone ILIKE $6)
+           AND ($7::numeric IS NULL OR coalesce(ec.base_salary, 0) >= $7)
+           AND ($8::numeric IS NULL OR coalesce(ec.base_salary, 0) <= $8)
         """,
         actor.legal_entity_id,
-        f'%{search.strip()}%' if search else None,
+        q,
         status_filter,
         department_id,
+        em,
+        ph,
+        salary_min,
+        salary_max,
     )
     rows = await db.fetch(
         f"""
@@ -381,16 +426,25 @@ async def employees_grid(
                LIMIT 1
           ) ec ON true
          WHERE e.legal_entity_id = $1
-           AND ($2::text IS NULL OR e.first_name ILIKE $2 OR e.last_name ILIKE $2 OR e.employee_number ILIKE $2)
+           AND ($2::text IS NULL OR e.first_name ILIKE $2 OR e.last_name ILIKE $2
+                OR e.employee_number ILIKE $2 OR e.email ILIKE $2 OR e.mobile_phone ILIKE $2)
            AND ($3::text IS NULL OR e.employment_status::text = $3)
            AND ($4::uuid IS NULL OR e.department_id = $4)
+           AND ($5::text IS NULL OR e.email ILIKE $5)
+           AND ($6::text IS NULL OR e.mobile_phone ILIKE $6)
+           AND ($7::numeric IS NULL OR coalesce(ec.base_salary, 0) >= $7)
+           AND ($8::numeric IS NULL OR coalesce(ec.base_salary, 0) <= $8)
          ORDER BY {order_by} {direction}, e.employee_number ASC
-         LIMIT $5 OFFSET $6
+         LIMIT $9 OFFSET $10
         """,
         actor.legal_entity_id,
-        f'%{search.strip()}%' if search else None,
+        q,
         status_filter,
         department_id,
+        em,
+        ph,
+        salary_min,
+        salary_max,
         page_size,
         (page - 1) * page_size,
     )
@@ -668,6 +722,76 @@ async def analytics_overview(request: Request) -> dict[str, object]:
         """,
         actor.legal_entity_id,
     )
+    performers = await db.fetch(
+        """
+        WITH week_bounds AS (
+            SELECT date_trunc('week', current_date)::date AS wstart,
+                   (date_trunc('week', current_date) + interval '6 days')::date AS wend
+        ),
+        sched AS (
+            SELECT a.employee_id,
+                   sum(sps.planned_minutes)::numeric AS sched_min
+              FROM assigned_shifts a
+              JOIN week_bounds wb ON true
+              JOIN shift_pattern_segments sps ON sps.shift_pattern_id = a.shift_pattern_id
+                 AND sps.day_index = extract(isodow from a.effective_from)::int
+             WHERE a.effective_from BETWEEN wb.wstart AND wb.wend
+             GROUP BY a.employee_id
+        ),
+        work AS (
+            SELECT aws.employee_id,
+                   sum(aws.total_minutes)::numeric AS work_min
+              FROM attendance_work_sessions aws
+              JOIN week_bounds wb ON aws.work_date BETWEEN wb.wstart AND wb.wend
+             GROUP BY aws.employee_id
+        ),
+        pen AS (
+            SELECT arf.employee_id,
+                   count(*)::numeric AS penalty
+              FROM attendance_review_flags arf
+              JOIN week_bounds wb ON arf.raised_at::date BETWEEN wb.wstart AND wb.wend
+             GROUP BY arf.employee_id
+        )
+        SELECT e.id,
+               e.first_name,
+               e.last_name,
+               coalesce(w.work_min, 0) AS work_min,
+               coalesce(s.sched_min, 1) AS sched_min,
+               coalesce(p.penalty, 0) AS penalty
+          FROM employees e
+          LEFT JOIN work w ON w.employee_id = e.id
+          LEFT JOIN sched s ON s.employee_id = e.id
+          LEFT JOIN pen p ON p.employee_id = e.id
+         WHERE e.legal_entity_id = $1
+           AND e.employment_status = 'active'
+         ORDER BY (
+           (coalesce(w.work_min, 0) / greatest(coalesce(s.sched_min, 1), 1)) - 0.05 * coalesce(p.penalty, 0)
+         ) DESC NULLS LAST
+         LIMIT 3
+        """,
+        actor.legal_entity_id,
+    )
+    top_performers = []
+    for row in performers:
+        ratio = float(row['work_min'] or 0) / max(float(row['sched_min'] or 1), 1.0)
+        penalty = float(row['penalty'] or 0)
+        score = max(0.0, min(1.0, ratio - 0.05 * penalty))
+        present_ratio = float(row['work_min'] or 0) / max(float(row['sched_min'] or 1), 1.0)
+        if present_ratio >= 0.95:
+            status = 'present'
+        elif present_ratio >= 0.7:
+            status = 'late'
+        else:
+            status = 'absent'
+        top_performers.append(
+            {
+                'employee_id': str(row['id']),
+                'full_name': f"{row['first_name']} {row['last_name']}".strip(),
+                'score': round(score, 3),
+                'status': status,
+            }
+        )
+
     return {
         'weekly_hours_trend': [
             {'label': row['work_date'].isoformat(), 'worked_hours': float(row['worked_hours'])}
@@ -678,6 +802,7 @@ async def analytics_overview(request: Request) -> dict[str, object]:
             'away': max(int(presence['active_total'] or 0) - int(presence['present_now'] or 0), 0),
             'total': int(presence['active_total'] or 0),
         },
+        'top_performers': top_performers,
     }
 
 
@@ -1045,6 +1170,7 @@ async def shift_planner(
                e.employee_number,
                e.first_name,
                e.last_name,
+               e.department_id,
                coalesce(d.name_ka, d.name_en) AS department_name,
                coalesce(jr.title_ka, jr.title_en) AS job_title
           FROM employees e
@@ -1196,6 +1322,7 @@ async def shift_planner(
     for row in employee_rows:
         employee_id = str(row['id'])
         weekly_minutes_map = weekly_minutes_by_employee.get(employee_id, {})
+        dept_id = row['department_id']
         employees.append(
             {
                 'id': employee_id,
@@ -1206,6 +1333,7 @@ async def shift_planner(
                 'job_title': row['job_title'],
                 'weekly_minutes': max(weekly_minutes_map.values(), default=0),
                 'weekly_minutes_map': weekly_minutes_map,
+                'can_edit': can_edit_shift_schedule(actor, dept_id),
             }
         )
 
@@ -1232,23 +1360,30 @@ async def shift_planner(
         'page': page,
         'page_size': page_size,
         'page_count': max((int(total_count or 0) + page_size - 1) // page_size, 1),
+        'user_can_edit_shifts': bool({'ADMIN', 'TENANT_ADMIN'} & actor.role_codes)
+        or bool(actor.managed_department_ids),
     }
 
 
 @UX_ROUTER.post('/shift-planner/assignments')
-async def upsert_shift_assignment(request: Request, payload: ShiftAssignmentUpsert) -> dict[str, str]:
+async def upsert_shift_assignment(request: Request, payload: ShiftAssignmentUpsert) -> dict[str, object]:
     actor = await require_actor(request)
     if not actor.has('attendance.review') and not actor.has('employee.manage'):
         raise HTTPException(status_code=403, detail='ცვლის დაგეგმვისთვის საჭიროა attendance.review უფლება')
     db = get_db_from_request(request)
-    employee_entity_id = await db.fetchval('SELECT legal_entity_id FROM employees WHERE id = $1', payload.employee_id)
+    emp_row = await db.fetchrow(
+        'SELECT legal_entity_id, department_id FROM employees WHERE id = $1',
+        payload.employee_id,
+    )
     pattern_entity_id = await db.fetchval('SELECT legal_entity_id FROM shift_patterns WHERE id = $1', payload.shift_pattern_id)
-    if employee_entity_id is None:
+    if emp_row is None:
         raise HTTPException(status_code=404, detail='თანამშრომელი ვერ მოიძებნა')
     if pattern_entity_id is None:
         raise HTTPException(status_code=404, detail='ცვლის შაბლონი ვერ მოიძებნა')
-    if employee_entity_id != actor.legal_entity_id or pattern_entity_id != actor.legal_entity_id:
+    if emp_row['legal_entity_id'] != actor.legal_entity_id or pattern_entity_id != actor.legal_entity_id:
         raise HTTPException(status_code=403, detail='სხვა იურიდიულ ერთეულზე ცვლის დანიშვნა აკრძალულია')
+    if not can_edit_shift_schedule(actor, emp_row['department_id']):
+        raise HTTPException(status_code=403, detail='ცვლის რედაქტირება — მხოლოდ ადმინისტრატორს ან დეპარტამენტის ხელმძღვანელს')
     await db.execute(
         """
         INSERT INTO assigned_shifts (
@@ -1261,7 +1396,12 @@ async def upsert_shift_assignment(request: Request, payload: ShiftAssignmentUpse
         payload.shift_date,
         actor.employee_id,
     )
-    return {'status': 'assigned'}
+    week_minutes = await _week_planned_minutes_fixed_weekly(db, payload.employee_id, payload.shift_date)
+    return {
+        'status': 'assigned',
+        'week_planned_minutes': week_minutes,
+        'over_40h_warning': week_minutes > 40 * 60,
+    }
 
 
 @UX_ROUTER.delete('/shift-planner/assignments/{employee_id}/{shift_date}')
@@ -1270,11 +1410,13 @@ async def clear_shift_assignment(request: Request, employee_id: UUID, shift_date
     if not actor.has('attendance.review') and not actor.has('employee.manage'):
         raise HTTPException(status_code=403, detail='ცვლის დაგეგმვისთვის საჭიროა attendance.review უფლება')
     db = get_db_from_request(request)
-    legal_entity_id = await db.fetchval('SELECT legal_entity_id FROM employees WHERE id = $1', employee_id)
-    if legal_entity_id is None:
+    emp = await db.fetchrow('SELECT legal_entity_id, department_id FROM employees WHERE id = $1', employee_id)
+    if emp is None:
         raise HTTPException(status_code=404, detail='თანამშრომელი ვერ მოიძებნა')
-    if legal_entity_id != actor.legal_entity_id and 'ADMIN' not in actor.role_codes:
+    if emp['legal_entity_id'] != actor.legal_entity_id and 'ADMIN' not in actor.role_codes:
         raise HTTPException(status_code=403, detail='თანამშრომელი სხვა იურიდიულ ერთეულს ეკუთვნის')
+    if not can_edit_shift_schedule(actor, emp['department_id']):
+        raise HTTPException(status_code=403, detail='ცვლის რედაქტირება — მხოლოდ ადმინისტრატორს ან დეპარტამენტის ხელმძღვანელს')
     await db.execute(
         """
         DELETE FROM assigned_shifts

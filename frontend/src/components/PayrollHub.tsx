@@ -1,9 +1,24 @@
 import { useState } from 'react'
 
-import { Download, LockKeyhole, Wallet } from 'lucide-react'
+import { Download, FileSpreadsheet, LockKeyhole, Wallet } from 'lucide-react'
 
+import { readToken } from '../api'
 import type { PayrollHubData } from '../types'
 import { formatMoney } from '../utils'
+
+async function downloadAuthorized(path: string, filename: string) {
+  const response = await fetch(path, { headers: { Authorization: `Bearer ${readToken()}` } })
+  if (!response.ok) {
+    throw new Error('ექსპორტი ვერ მოხერხდა')
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
 
 type PayrollHubProps = {
   data: PayrollHubData | null
@@ -56,10 +71,40 @@ export function PayrollHub(props: PayrollHubProps) {
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.status === 'locked' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                   {item.status}
                 </span>
+                {props.data ? (
+                  <>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slatepro-200 bg-white px-4 py-3 text-sm font-semibold text-slatepro-700"
+                      onClick={() =>
+                        void downloadAuthorized(
+                          `/timesheets/${item.employee_id}/${props.data!.year}/${props.data!.month}/export.xlsx`,
+                          `tabele_${item.employee_number}_${props.data!.year}_${props.data!.month}.xlsx`
+                        )
+                      }
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Excel
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slatepro-200 bg-white px-4 py-3 text-sm font-semibold text-slatepro-700"
+                      onClick={() =>
+                        void downloadAuthorized(
+                          `/timesheets/${item.employee_id}/${props.data!.year}/${props.data!.month}/export.pdf`,
+                          `tabele_${item.employee_number}_${props.data!.year}_${props.data!.month}.pdf`
+                        )
+                      }
+                    >
+                      <Download className="h-4 w-4" />
+                      PDF ტაბელი
+                    </button>
+                  </>
+                ) : null}
                 {item.payslip_url ? (
                   <a className="inline-flex items-center gap-2 rounded-2xl border border-slatepro-200 bg-white px-4 py-3 text-sm font-semibold text-slatepro-700" href={item.payslip_url} target="_blank" rel="noreferrer">
                     <Download className="h-4 w-4" />
-                    PDF
+                    Payslip PDF
                   </a>
                 ) : null}
                 {!item.payment_id ? (

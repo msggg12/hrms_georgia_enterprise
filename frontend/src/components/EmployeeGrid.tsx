@@ -1,7 +1,7 @@
 import { Activity, ArrowDownUp, Fingerprint, KeyRound, LoaderCircle, PencilLine, Search, Upload, UserPlus } from 'lucide-react'
 
 import { ka } from '../i18n/ka'
-import type { GridItem, GridResponse } from '../types'
+import type { GridItem, GridResponse, OptionItem } from '../types'
 import { formatMoney, initials, statusBadge } from '../utils'
 
 type GridSortBy = 'employee_number' | 'full_name' | 'department_name' | 'job_title' | 'employment_status' | 'hire_date'
@@ -12,10 +12,21 @@ type EmployeeGridProps = {
   importBusy: boolean
   search: string
   statusFilter: string
+  departmentFilter: string
+  emailFilter: string
+  phoneFilter: string
+  salaryMin: string
+  salaryMax: string
+  departments: OptionItem[]
   sortBy: GridSortBy
   sortDirection: 'asc' | 'desc'
   onSearchChange: (value: string) => void
   onStatusFilterChange: (value: string) => void
+  onDepartmentFilterChange: (value: string) => void
+  onEmailFilterChange: (value: string) => void
+  onPhoneFilterChange: (value: string) => void
+  onSalaryMinChange: (value: string) => void
+  onSalaryMaxChange: (value: string) => void
   onSortByChange: (value: GridSortBy) => void
   onToggleSortDirection: () => void
   onOpenCreate: () => void
@@ -41,22 +52,6 @@ function employeeStatusLabel(status: string): string {
   return status
 }
 
-function MiniTrend() {
-  const bars = [48, 42, 54, 28, 33, 49, 38]
-  return (
-    <div className="flex h-28 items-end gap-2">
-      {bars.map((height, index) => (
-        <div key={index} className="flex flex-1 flex-col items-center gap-2">
-          <div className="w-full rounded-t-lg bg-indigo-100" style={{ height }}>
-            <div className="h-full rounded-t-lg bg-[var(--brand-primary)]" style={{ width: '100%', opacity: index % 2 === 0 ? 1 : 0.82 }} />
-          </div>
-          <span className="text-[11px] text-slate-400">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index]}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export function EmployeeGrid(props: EmployeeGridProps) {
   const shownCount = props.grid?.items.length ?? 0
   const totalCount = props.grid?.total ?? 0
@@ -65,97 +60,78 @@ export function EmployeeGrid(props: EmployeeGridProps) {
 
   return (
     <section className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_320px]">
-        <article className="panel-card p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-[26px] font-semibold tracking-[-0.03em] text-slate-900">{ka.employees}</h2>
-              <p className="mt-2 text-sm text-slate-500">Manage employees, positions, managers, access, and SmartPSS CSV imports from one place.</p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <label className="muted-btn cursor-pointer">
-                <input
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="hidden"
-                  disabled={props.importBusy}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) {
-                      props.onImport(file)
-                    }
-                    event.currentTarget.value = ''
-                  }}
-                />
-                {props.importBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                SmartPSS CSV
-              </label>
-              <button type="button" onClick={props.onOpenCreate} className="primary-btn">
-                <UserPlus className="h-4 w-4" />
-                {ka.addEmployee}
-              </button>
-            </div>
+      <article className="panel-card p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-900">{ka.employeeManagement}</h2>
+            <p className="mt-1 text-sm text-slate-500">ფილტრები: სახელი, დეპარტამენტი, ტელეფონი, ელფოსტა, ხელფასი.</p>
           </div>
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-            <div className="rounded-[20px] border border-slate-100 bg-white p-4">
-              <div className="mb-5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Over all Employee Performance</h3>
-                  <p className="mt-1 text-sm text-slate-500">Active staff overview</p>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-slate-500">
-                  <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" />Employee</span>
-                  <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-sky-500" />Intern</span>
-                </div>
-              </div>
-              <MiniTrend />
-            </div>
-
-            <div className="rounded-[20px] border border-slate-100 bg-white p-4">
-              <h3 className="text-lg font-semibold text-slate-900">Top 3 Employee by Performance</h3>
-              <div className="mt-5 space-y-4">
-                {(props.grid?.items ?? []).slice(0, 3).map((employee, index) => {
-                  const width = [62, 78, 40][index] ?? 55
-                  return (
-                    <div key={employee.id}>
-                      <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="truncate text-slate-600">{employee.first_name} {employee.last_name}</span>
-                        <span className="text-slate-400">{width}%</span>
-                      </div>
-                      <div className="h-3 overflow-hidden rounded-full bg-indigo-100">
-                        <div className="h-full rounded-full bg-[var(--brand-primary)]" style={{ width: `${width}%` }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="muted-btn cursor-pointer text-sm">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                disabled={props.importBusy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) {
+                    props.onImport(file)
+                  }
+                  event.currentTarget.value = ''
+                }}
+              />
+              {props.importBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              SmartPSS CSV
+            </label>
+            <button type="button" onClick={props.onOpenCreate} className="primary-btn text-sm">
+              <UserPlus className="h-4 w-4" />
+              {ka.addEmployee}
+            </button>
           </div>
-        </article>
+        </div>
 
-        <article className="panel-card p-5">
-          <div className="space-y-3">
-            <div className="rounded-[18px] border border-slate-100 bg-white p-4">
-              <p className="text-sm font-semibold text-slate-900">Overview</p>
-              <div className="mt-4 grid gap-3">
-                <div className="rounded-xl bg-slate-50 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Employees</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{totalCount}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Visible rows</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{shownCount}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Sort</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{props.sortBy} / {props.sortDirection}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </article>
-      </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <select
+            className="input-shell text-sm"
+            value={props.departmentFilter}
+            onChange={(event) => props.onDepartmentFilterChange(event.target.value)}
+          >
+            <option value="">ყველა დეპარტამენტი</option>
+            {props.departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name_ka ?? d.name_en}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input-shell text-sm"
+            value={props.emailFilter}
+            onChange={(event) => props.onEmailFilterChange(event.target.value)}
+            placeholder={ka.email}
+          />
+          <input
+            className="input-shell text-sm"
+            value={props.phoneFilter}
+            onChange={(event) => props.onPhoneFilterChange(event.target.value)}
+            placeholder={ka.phone}
+          />
+          <input
+            className="input-shell text-sm"
+            value={props.salaryMin}
+            onChange={(event) => props.onSalaryMinChange(event.target.value)}
+            placeholder="ხელფასი მინ (GEL)"
+            inputMode="numeric"
+          />
+          <input
+            className="input-shell text-sm"
+            value={props.salaryMax}
+            onChange={(event) => props.onSalaryMaxChange(event.target.value)}
+            placeholder="ხელფასი მაქს (GEL)"
+            inputMode="numeric"
+          />
+        </div>
+      </article>
 
       <article className="table-shell">
         <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 xl:flex-row xl:items-center xl:justify-between">
@@ -193,7 +169,7 @@ export function EmployeeGrid(props: EmployeeGridProps) {
           <table className="min-w-full text-left">
             <thead className="border-b border-slate-100 bg-slate-50/70">
               <tr className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                <th className="px-5 py-4 font-semibold">Full Name & Email</th>
+                <th className="px-5 py-4 font-semibold">სახელი და კონტაქტი</th>
                 <th className="px-5 py-4 font-semibold">{ka.role}</th>
                 <th className="px-5 py-4 font-semibold">{ka.department}</th>
                 <th className="px-5 py-4 font-semibold">Boss</th>
@@ -217,6 +193,7 @@ export function EmployeeGrid(props: EmployeeGridProps) {
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-slate-900">{employee.first_name} {employee.last_name}</p>
                         <p className="truncate text-sm text-slate-500">{employee.email ?? '-'}</p>
+                        <p className="truncate text-xs text-slate-400">{employee.mobile_phone ?? '—'}</p>
                       </div>
                     </div>
                   </td>

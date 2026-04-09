@@ -81,10 +81,11 @@ function PatternPreview(props: { pattern: ShiftPattern; dragging?: boolean }) {
   )
 }
 
-function PatternCard(props: { pattern: ShiftPattern }) {
+function PatternCard(props: { pattern: ShiftPattern; dragDisabled?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `pattern-${props.pattern.id}`,
-    data: { patternId: props.pattern.id, pattern: props.pattern }
+    data: { patternId: props.pattern.id, pattern: props.pattern },
+    disabled: props.dragDisabled
   })
 
   const style: CSSProperties | undefined = transform
@@ -103,11 +104,13 @@ function ShiftSlot(props: {
   shiftDate: string
   assignment: ShiftAssignment | undefined
   overloaded: boolean
+  canEdit: boolean
   onClear: (employeeId: string, shiftDate: string) => void
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: `slot-${props.employeeId}-${props.shiftDate}`,
-    data: { employeeId: props.employeeId, shiftDate: props.shiftDate }
+    data: { employeeId: props.employeeId, shiftDate: props.shiftDate },
+    disabled: !props.canEdit
   })
 
   return (
@@ -131,18 +134,20 @@ function ShiftSlot(props: {
             <p className="mt-1 text-xs font-semibold text-slate-950">{props.assignment.start_time}</p>
             <p className="mt-0.5 text-[11px] text-slate-500">{formatHours(props.assignment.planned_minutes)}</p>
           </div>
-          <button
-            type="button"
-            className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700"
-            onClick={() => props.onClear(props.employeeId, props.shiftDate)}
-          >
-            <X className="h-3 w-3" />
-            {ka.clearShift}
-          </button>
+          {props.canEdit ? (
+            <button
+              type="button"
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700"
+              onClick={() => props.onClear(props.employeeId, props.shiftDate)}
+            >
+              <X className="h-3 w-3" />
+              {ka.clearShift}
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="flex h-full items-center justify-center rounded-md border border-dashed border-slate-200 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-          Drop
+          {props.canEdit ? 'Drop' : '—'}
         </div>
       )}
     </div>
@@ -270,7 +275,11 @@ export function ShiftPlanner(props: ShiftPlannerProps) {
         <div className="mb-5 overflow-x-auto">
           <div className="flex gap-3 pb-1">
             {(props.data?.patterns ?? []).map((pattern) => (
-              <PatternCard key={pattern.id} pattern={pattern} />
+              <PatternCard
+                key={pattern.id}
+                pattern={pattern}
+                dragDisabled={props.data?.user_can_edit_shifts === false}
+              />
             ))}
             {!props.data?.patterns.length ? (
               <div className="rounded-lg border border-dashed border-slate-200 px-6 py-10 text-center text-sm text-slate-500">
@@ -309,6 +318,7 @@ export function ShiftPlanner(props: ShiftPlannerProps) {
                     {(props.data?.employees ?? []).map((employee) => {
                       const weekMinutes = employee.weekly_minutes_map?.[week.key] ?? 0
                       const overloaded = weekMinutes > 2400
+                      const canEdit = employee.can_edit !== false && props.data?.user_can_edit_shifts !== false
 
                       return (
                         <div key={`${week.key}-${employee.id}`} className="grid gap-2" style={tableStyle}>
@@ -339,6 +349,7 @@ export function ShiftPlanner(props: ShiftPlannerProps) {
                               shiftDate={day.date}
                               assignment={assignments.get(`${employee.id}-${day.date}`)}
                               overloaded={overloaded}
+                              canEdit={canEdit}
                               onClear={(employeeId, shiftDate) => void props.onClear(employeeId, shiftDate)}
                             />
                           ))}

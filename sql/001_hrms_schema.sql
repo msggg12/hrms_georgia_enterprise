@@ -9,7 +9,7 @@ SET search_path TO hrms, public;
 
 CREATE TYPE employee_status AS ENUM ('draft', 'active', 'suspended', 'terminated');
 CREATE TYPE device_brand AS ENUM ('zk', 'dahua', 'suprema');
-CREATE TYPE device_transport AS ENUM ('adms_push', 'http_cgi', 'rest_api', 'raw_socket', 'sdk_bridge');
+CREATE TYPE device_transport AS ENUM ('adms', 'adms_push', 'biostar', 'http_cgi', 'rest_api', 'raw_socket', 'sdk_bridge');
 CREATE TYPE device_command_type AS ENUM ('upsert_user', 'delete_user', 'upsert_template', 'delete_template');
 CREATE TYPE device_command_status AS ENUM ('queued', 'processing', 'completed', 'failed');
 CREATE TYPE attendance_direction AS ENUM ('in', 'out', 'unknown');
@@ -18,7 +18,7 @@ CREATE TYPE shift_pattern_type AS ENUM ('fixed_weekly', 'cycle');
 CREATE TYPE asset_condition AS ENUM ('new', 'excellent', 'good', 'fair', 'damaged', 'retired', 'lost');
 CREATE TYPE asset_status AS ENUM ('in_stock', 'assigned', 'repair', 'retired', 'disposed', 'lost');
 CREATE TYPE checklist_item_status AS ENUM ('pending', 'in_progress', 'completed', 'skipped', 'blocked');
-CREATE TYPE review_status AS ENUM ('open', 'needs_review', 'approved', 'corrected', 'rejected');
+CREATE TYPE review_status AS ENUM ('open', 'needs_review', 'approved', 'corrected', 'rejected', 'flagged');
 CREATE TYPE timesheet_status AS ENUM ('draft', 'manager_review', 'approved', 'exported', 'locked');
 CREATE TYPE payroll_cycle AS ENUM ('monthly', 'biweekly', 'weekly');
 CREATE TYPE pipeline_application_status AS ENUM ('active', 'hired', 'rejected', 'withdrawn');

@@ -112,3 +112,12 @@ def ensure_can_export_payroll(actor: ActorContext) -> None:
 def ensure_can_see_compensation(actor: ActorContext) -> None:
     if not actor.has('compensation.read_all'):
         raise AuthorizationError('Salary data is limited to HR roles')
+
+
+def can_edit_shift_schedule(actor: ActorContext, employee_department_id: UUID | None) -> bool:
+    """Admin / Tenant Admin, or manager of the employee's department (dept head)."""
+    if bool({'ADMIN', 'TENANT_ADMIN'} & actor.role_codes):
+        return True
+    if employee_department_id is not None and employee_department_id in actor.managed_department_ids:
+        return True
+    return False

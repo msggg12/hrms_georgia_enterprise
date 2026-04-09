@@ -94,6 +94,13 @@ export type FeedEvent = {
   device_status: string | null
 }
 
+export type TopPerformerRow = {
+  employee_id: string
+  full_name: string
+  score: number
+  status: 'present' | 'late' | 'absent'
+}
+
 export type AnalyticsOverview = {
   weekly_hours_trend: Array<{ label: string; worked_hours: number }>
   staff_presence_ratio: {
@@ -101,6 +108,7 @@ export type AnalyticsOverview = {
     away: number
     total: number
   }
+  top_performers: TopPerformerRow[]
 }
 
 export type NodeItem = {
@@ -186,6 +194,7 @@ export type ShiftEmployee = {
   job_title: string | null
   weekly_minutes: number
   weekly_minutes_map: Record<string, number>
+  can_edit?: boolean
 }
 
 export type ShiftAssignment = {
@@ -214,6 +223,7 @@ export type ShiftPlannerData = {
   page: number
   page_size: number
   page_count: number
+  user_can_edit_shifts?: boolean
 }
 
 export type AttendanceHistoryItem = {

@@ -1,19 +1,17 @@
 import type { CSSProperties } from 'react'
 import { useDeferredValue, useEffect, useState } from 'react'
 
-import { Bell, CalendarDays, Plus, Search } from 'lucide-react'
+import { Bell, Fingerprint, Menu } from 'lucide-react'
 
 import { deleteJson, getJson, login, logout, postForm, postJson, putJson, readToken } from './api'
 import { AtsBoard } from './components/AtsBoard'
-import { AttendanceOverridesPanel } from './components/AttendanceOverridesPanel'
 import { AttendanceModal } from './components/AttendanceModal'
 import { CelebrationWidget } from './components/CelebrationWidget'
-import { ClusterBoard } from './components/ClusterBoard'
 import { DeviceRegistryPanel } from './components/DeviceRegistryPanel'
 import { EmployeeDrawer } from './components/EmployeeDrawer'
 import { EmployeeGrid } from './components/EmployeeGrid'
 import { HardwareSyncModal } from './components/HardwareSyncModal'
-import { Insights } from './components/Insights'
+import { TopPerformers } from './components/TopPerformers'
 import { LeaveCalculator } from './components/LeaveCalculator'
 import { LiveFeed } from './components/LiveFeed'
 import { MetricCards } from './components/MetricCards'
@@ -24,6 +22,7 @@ import { PerformanceHub } from './components/PerformanceHub'
 import { ShiftPlanner } from './components/ShiftPlanner'
 import { ShiftBuilder } from './components/ShiftBuilder'
 import { Sidebar } from './components/Sidebar'
+import { ToastStack, type ToastItem } from './components/ToastStack'
 import { SystemConfigPanel } from './components/SystemConfigPanel'
 import { TeamChat } from './components/TeamChat'
 import { VacancyManager } from './components/VacancyManager'
@@ -33,7 +32,6 @@ import { ka } from './i18n/ka'
 import { resolveTenantBranding } from './tenantBranding'
 import type {
   AnalyticsOverview,
-  AttendanceOverrideItem,
   AtsCard,
   AtsBoardData,
   AttendanceHistoryItem,
@@ -47,7 +45,6 @@ import type {
   GridItem,
   GridResponse,
   LeaveSelfServiceData,
-  MonitoringData,
   OrgChartData,
   PayrollHubData,
   PersonalReportsData,
@@ -239,6 +236,13 @@ export function App() {
   const [token, setToken] = useState(readToken())
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+  const [emailFilter, setEmailFilter] = useState('')
+  const [phoneFilter, setPhoneFilter] = useState('')
+  const [salaryMin, setSalaryMin] = useState('')
+  const [salaryMax, setSalaryMax] = useState('')
+  const [departmentFilter, setDepartmentFilter] = useState('')
   const [loginState, setLoginState] = useState<LoginState>({ username: 'superadmin', password: 'ChangeMe123!' })
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null)
   const [currentUser, setCurrentUser] = useState<AuthMe | null>(null)
@@ -247,7 +251,6 @@ export function App() {
   const [options, setOptions] = useState<EmployeeFormOptions | null>(null)
   const [feed, setFeed] = useState<FeedEvent[]>([])
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null)
-  const [monitoring, setMonitoring] = useState<MonitoringData | null>(null)
   const [atsBoard, setAtsBoard] = useState<AtsBoardData | null>(null)
   const [shiftPlanner, setShiftPlanner] = useState<ShiftPlannerData | null>(null)
   const [celebrationData, setCelebrationData] = useState<CelebrationHubData | null>(null)
@@ -255,7 +258,6 @@ export function App() {
   const [teamChatConfig, setTeamChatConfig] = useState<TeamChatConfig | null>(null)
   const [shiftBuilderData, setShiftBuilderData] = useState<ShiftBuilderData | null>(null)
   const [webPunchData, setWebPunchData] = useState<WebPunchConfigData | null>(null)
-  const [attendanceOverrides, setAttendanceOverrides] = useState<AttendanceOverrideItem[]>([])
   const [vacancyData, setVacancyData] = useState<VacancyData | null>(null)
   const [warehouseData, setWarehouseData] = useState<WarehouseData | null>(null)
   const [performanceHub, setPerformanceHub] = useState<PerformanceHubData | null>(null)
@@ -334,8 +336,6 @@ export function App() {
     day: 'numeric'
   }).format(new Date())
   const topBarRole = currentUser?.role_codes[0] ?? 'EMPLOYEE'
-  const welcomeName = loginState.username || 'User'
-
   async function loadBootstrap() {
     setBootstrap(await getJson<BootstrapData>('/ux/bootstrap'))
   }
@@ -358,7 +358,6 @@ export function App() {
       teamChat,
       shiftBuilder,
       webPunch,
-      overrides,
       vacancies,
       warehouse,
       performanceData,
@@ -378,7 +377,6 @@ export function App() {
       getJson<TeamChatConfig>('/ux/team-chat-config'),
       getJson<ShiftBuilderData>('/ux/shift-builder'),
       getJson<WebPunchConfigData>('/ux/web-punch-config'),
-      getJson<AttendanceOverrideItem[]>('/ux/attendance-overrides'),
       getJson<VacancyData>('/ux/vacancies'),
       getJson<WarehouseData>('/ux/warehouse'),
       getJson<PerformanceHubData>('/ux/performance-hub'),
@@ -397,7 +395,6 @@ export function App() {
     setTeamChatConfig(teamChat)
     setShiftBuilderData(shiftBuilder)
     setWebPunchData(webPunch)
-    setAttendanceOverrides(overrides)
     setVacancyData(vacancies)
     setWarehouseData(warehouse)
     setPerformanceHub(performanceData)
@@ -424,16 +421,11 @@ export function App() {
     setPersonalReports(personalReportsData)
     setGrid(null)
     setOptions(null)
-    setMonitoring(null)
     setFeed([])
   }
 
   async function loadLivePanels() {
-    const [monitoringData, liveFeed] = await Promise.all([
-      getJson<MonitoringData>('/ux/live-monitoring'),
-      getJson<FeedEvent[]>('/ux/attendance-live-feed')
-    ])
-    setMonitoring(monitoringData)
+    const liveFeed = await getJson<FeedEvent[]>('/ux/attendance-live-feed')
     setFeed(liveFeed)
   }
 
@@ -461,14 +453,12 @@ export function App() {
   }
 
   async function loadAttendanceControlData() {
-    const [builder, punch, overrides] = await Promise.all([
+    const [builder, punch] = await Promise.all([
       getJson<ShiftBuilderData>('/ux/shift-builder'),
-      getJson<WebPunchConfigData>('/ux/web-punch-config'),
-      getJson<AttendanceOverrideItem[]>('/ux/attendance-overrides')
+      getJson<WebPunchConfigData>('/ux/web-punch-config')
     ])
     setShiftBuilderData(builder)
     setWebPunchData(punch)
-    setAttendanceOverrides(overrides)
   }
 
   async function loadVacancyData() {
@@ -551,6 +541,11 @@ export function App() {
         const payload = await getJson<GridResponse>('/ux/employees-grid', {
           search: deferredSearch,
           status_filter: statusFilter,
+          department_id: departmentFilter || null,
+          email_contains: emailFilter || null,
+          phone_contains: phoneFilter || null,
+          salary_min: salaryMin ? Number(salaryMin) : null,
+          salary_max: salaryMax ? Number(salaryMax) : null,
           sort_by: sortBy,
           sort_direction: sortDirection,
           page,
@@ -566,15 +561,37 @@ export function App() {
     }
 
     void loadGrid()
-  }, [token, adminMode, deferredSearch, statusFilter, sortBy, sortDirection, page, pageSize])
+  }, [
+    token,
+    adminMode,
+    deferredSearch,
+    statusFilter,
+    departmentFilter,
+    emailFilter,
+    phoneFilter,
+    salaryMin,
+    salaryMax,
+    sortBy,
+    sortDirection,
+    page,
+    pageSize
+  ])
 
   useEffect(() => {
-    if (!error) {
+    if (!token || !notice) {
       return
     }
-    const timeout = window.setTimeout(() => setError(''), 8000)
-    return () => window.clearTimeout(timeout)
-  }, [error])
+    setToasts((rows) => [...rows, { id: `ok-${Date.now()}`, tone: 'success', message: notice }])
+    setNotice('')
+  }, [token, notice])
+
+  useEffect(() => {
+    if (!token || !error) {
+      return
+    }
+    setToasts((rows) => [...rows, { id: `err-${Date.now()}`, tone: 'error', message: error }])
+    setError('')
+  }, [token, error])
 
   useEffect(() => {
     setError('')
@@ -641,7 +658,7 @@ export function App() {
       manager_name: detail.manager_name ?? '',
       profile_photo_url: detail.profile_photo_url ?? '',
       hire_date: detail.hire_date,
-      base_salary: detail.base_salary ?? '',
+      base_salary: detail.base_salary != null ? String(detail.base_salary) : '',
       pay_policy_id: detail.pay_policy_id ?? options?.pay_policies[0]?.id ?? '',
       hourly_rate_override: detail.hourly_rate_override ?? '',
       is_pension_participant: detail.is_pension_participant,
@@ -661,23 +678,26 @@ export function App() {
   }
 
   async function refreshAfterMutation() {
-    const [homeData, gridData, monitoringData, orgChartData, personalReportsData] = await Promise.all([
+    const [homeData, gridData, orgChartData, personalReportsData] = await Promise.all([
       getJson<WidgetData>('/ux/home-data'),
       getJson<GridResponse>('/ux/employees-grid', {
         search: deferredSearch,
         status_filter: statusFilter,
+        department_id: departmentFilter || null,
+        email_contains: emailFilter || null,
+        phone_contains: phoneFilter || null,
+        salary_min: salaryMin ? Number(salaryMin) : null,
+        salary_max: salaryMax ? Number(salaryMax) : null,
         sort_by: sortBy,
         sort_direction: sortDirection,
         page,
         page_size: pageSize
       }),
-      getJson<MonitoringData>('/ux/live-monitoring'),
       getJson<OrgChartData>('/ux/org-chart'),
       getJson<PersonalReportsData>('/ux/personal-reports')
     ])
     setSummary(homeData.summary)
     setGrid(gridData)
-    setMonitoring(monitoringData)
     setOrgChart(orgChartData)
     setPersonalReports(personalReportsData)
   }
@@ -866,13 +886,23 @@ export function App() {
     const previousPlanner = shiftPlanner
     setShiftPlanner((current) => updateShiftPlannerLocally(current, employeeId, shiftPatternId, shiftDate))
     try {
-      await postJson('/ux/shift-planner/assignments', {
+      const res = await postJson<{ over_40h_warning?: boolean }>('/ux/shift-planner/assignments', {
         employee_id: employeeId,
         shift_pattern_id: shiftPatternId,
         shift_date: shiftDate
       })
       await loadShiftPlanner()
       setError('')
+      if (res.over_40h_warning) {
+        setToasts((rows) => [
+          ...rows,
+          {
+            id: `w-${Date.now()}`,
+            tone: 'warning',
+            message: 'გაფრთხილება: ამ კვირის გეგმილი საათები აღემატება 40 საათს.'
+          }
+        ])
+      }
     } catch (err) {
       setShiftPlanner(previousPlanner)
       setError((err as Error).message)
@@ -932,24 +962,12 @@ export function App() {
     }
   }
 
-  async function resolveAttendanceOverride(
-    item: AttendanceOverrideItem,
-    payload: {
-      session_id: string | null
-      work_date: string
-      corrected_check_in: string
-      corrected_check_out: string | null
-      resolution_note: string
-      mark_review_status: string
-    }
-  ) {
+  async function headerWebCheckIn() {
     try {
-      await postJson(`/attendance/review-flags/${item.id}/resolve`, payload)
-      await Promise.all([loadAttendanceControlData(), loadLivePanels()])
-      setError('')
-    } catch (err) {
-      setError((err as Error).message)
-      throw err
+      await submitWebPunch({ direction: 'auto', latitude: null, longitude: null })
+      setNotice('Web Check-In ჩაიწერა (ჭკვიანი მიმართულება)')
+    } catch {
+      /* toast via submitWebPunch error path */
     }
   }
 
@@ -1250,12 +1268,11 @@ export function App() {
             <MetricCards summary={summary} />
             {adminMode ? (
               <>
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)]">
-                  <Insights analytics={analytics} />
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
                   <LiveFeed feed={feed} />
+                  <TopPerformers analytics={analytics} />
                 </div>
                 <CelebrationWidget data={celebrationData} />
-                <ClusterBoard monitoring={monitoring} />
               </>
             ) : (
               <PersonalReportsPanel data={personalReports} />
@@ -1270,6 +1287,12 @@ export function App() {
             importBusy={importBusy}
             search={search}
             statusFilter={statusFilter}
+            departmentFilter={departmentFilter}
+            emailFilter={emailFilter}
+            phoneFilter={phoneFilter}
+            salaryMin={salaryMin}
+            salaryMax={salaryMax}
+            departments={options?.departments ?? []}
             sortBy={sortBy}
             sortDirection={sortDirection}
             onSearchChange={(value) => {
@@ -1278,6 +1301,26 @@ export function App() {
             }}
             onStatusFilterChange={(value) => {
               setStatusFilter(value)
+              setPage(1)
+            }}
+            onDepartmentFilterChange={(value) => {
+              setDepartmentFilter(value)
+              setPage(1)
+            }}
+            onEmailFilterChange={(value) => {
+              setEmailFilter(value)
+              setPage(1)
+            }}
+            onPhoneFilterChange={(value) => {
+              setPhoneFilter(value)
+              setPage(1)
+            }}
+            onSalaryMinChange={(value) => {
+              setSalaryMin(value)
+              setPage(1)
+            }}
+            onSalaryMaxChange={(value) => {
+              setSalaryMax(value)
               setPage(1)
             }}
             onSortByChange={setSortBy}
@@ -1299,10 +1342,7 @@ export function App() {
         return (
           <div className="space-y-6">
             <ShiftBuilder data={shiftBuilderData} onSave={saveShiftPattern} />
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.9fr)]">
-              <WebPunchPanel data={webPunchData} onSubmit={submitWebPunch} />
-              <AttendanceOverridesPanel items={attendanceOverrides} onResolve={resolveAttendanceOverride} />
-            </div>
+            <WebPunchPanel data={webPunchData} onSubmit={submitWebPunch} />
             <ShiftPlanner
               data={shiftPlanner}
               busy={shiftBusy}
@@ -1397,6 +1437,14 @@ export function App() {
         } as CSSProperties
       }
     >
+      {mobileMenuOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden"
+          aria-label="დახურვა"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      ) : null}
       <div className="page-layout-card flex min-h-[calc(100vh-24px)] overflow-hidden">
       <Sidebar
         collapsed={sidebarCollapsed}
@@ -1404,6 +1452,8 @@ export function App() {
         branding={branding}
         featureFlags={featureFlags}
         allowedSections={allowedSections}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
         onSelect={(key) => setActiveSection(key as AppSection)}
         onToggle={() => setSidebarCollapsed((current) => !current)}
         onLogout={() => {
@@ -1414,98 +1464,48 @@ export function App() {
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-        <header className="topbar-shell">
-          <div className="flex flex-col gap-5 px-4 py-5 sm:px-6 lg:px-7">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-[34px] font-semibold tracking-[-0.04em] text-slate-900">
-                  Welcome back, <span className="text-[var(--brand-primary)]">{welcomeName}!</span>
-                </h1>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                  <span>Home</span>
-                  <span>/</span>
-                  <span>{sectionCopy[activeSection].title}</span>
-                </div>
-              </div>
-              <div className="hidden items-center gap-3 lg:flex">
-                <button type="button" className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50">
-                  <Search className="h-4 w-4" />
-                </button>
-                <button type="button" className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50">
-                  <Bell className="h-4 w-4" />
-                </button>
-                <button type="button" className="muted-btn px-5" onClick={() => setActiveSection('attendance')}>
-                  <CalendarDays className="h-4 w-4" />
-                  Attendance
-                </button>
-                {adminMode ? (
-                  <button type="button" className="primary-btn px-5" onClick={openCreateDrawer}>
-                    <Plus className="h-4 w-4" />
-                    Add Employee
-                  </button>
-                ) : null}
+        <header className="topbar-shell shrink-0 border-b border-slate-200 bg-white">
+          <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-600 lg:hidden"
+                onClick={() => setMobileMenuOpen(true)}
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="min-w-0">
+                <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-900">{sectionCopy[activeSection].title}</p>
+                <p className="truncate text-xs text-slate-500">
+                  {branding.companyName} · {topBarRole} · {topBarDate}
+                </p>
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-4 lg:hidden">
-            <select className="input-shell w-full" value={activeSection} onChange={(event) => setActiveSection(event.target.value as AppSection)}>
-              {visibleSections.map((section) => (
-                <option key={section} value={section}>
-                  {sectionCopy[section].title}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="muted-btn"
-              onClick={() => {
-                logout()
-                setCurrentUser(null)
-                setToken('')
-              }}
-            >
-              გამოსვლა
-            </button>
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <button type="button" className="primary-btn px-3 py-2.5 text-sm sm:px-5" onClick={() => void headerWebCheckIn()}>
+                <Fingerprint className="h-4 w-4" />
+                <span className="hidden sm:inline">Web Check-In</span>
+                <span className="sm:hidden">Check-In</span>
+              </button>
+              <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50">
+                <Bell className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </header>
 
         <div className="page-shell">
-          <div className="hidden">
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="text-sm font-medium text-slate-900">{branding.companyName}</div>
-              <div className="mt-1 text-sm text-slate-500">{topBarDate}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <select className="input-shell w-full" value={activeSection} onChange={(event) => setActiveSection(event.target.value as AppSection)}>
-                {visibleSections.map((section) => (
-                  <option key={section} value={section}>
-                    {sectionCopy[section].title}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="muted-btn mt-3 w-full justify-center"
-                onClick={() => {
-                  logout()
-                  setCurrentUser(null)
-                  setToken('')
-                }}
-              >
-                გასვლა
-              </button>
-            </div>
-          </div>
-
           {renderSection()}
 
-          {notice ? <div className="mt-6 max-w-3xl break-words rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
-          {error ? <div className="mt-6 max-w-3xl break-words whitespace-pre-wrap rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-          <div className="mt-8 text-sm text-slate-400">{branding.companyName} • {topBarRole} • {topBarDate}</div>
+          <footer className="mt-10 border-t border-slate-100 pt-6 text-center text-xs leading-relaxed text-slate-500">
+            <p>Made by Nika Datiashvili, Designed by Tamta Modebadze, Supported by ITGS Sulkhan Sulkhanishvili.</p>
+            <p className="mt-1">© 2026 HRMS Georgia Enterprise. All Rights Reserved.</p>
+          </footer>
         </div>
       </main>
       </div>
+
+      <ToastStack items={toasts} onDismiss={(id) => setToasts((rows) => rows.filter((row) => row.id !== id))} />
 
       <EmployeeDrawer
         open={drawerOpen}

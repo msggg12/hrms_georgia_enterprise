@@ -474,33 +474,52 @@ async def seed(conn: asyncpg.Connection) -> None:
 
     print(f"  ✓ Auth identities & roles assigned")
 
-    # ── 7. Leave Types & Balances ──────────────────────────────────────
+    # ── 7. Leave Types & Balances (columns aligned with sql/002_enterprise_extensions.sql + init_db) ──
+    balance_year = 2026
     for tax_id, eid in entity_ids.items():
         for code, name_en, name_ka, default_days, is_active in LEAVE_TYPES:
+            carryover = min(Decimal('10'), Decimal(str(default_days))) if default_days > 0 else Decimal('0')
             lt_id = await conn.fetchval(
                 """
                 INSERT INTO leave_types (
-                    legal_entity_id, code, name_en, name_ka,
-                    default_annual_days, is_active
-                ) VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (legal_entity_id, code) DO UPDATE SET name_en = EXCLUDED.name_en
+                    legal_entity_id, code, name_en, name_ka, is_paid,
+                    annual_allowance_days, carryover_limit_days, is_active
+                ) VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+                ON CONFLICT (legal_entity_id, code) DO UPDATE SET
+                    name_en = EXCLUDED.name_en,
+                    name_ka = EXCLUDED.name_ka,
+                    annual_allowance_days = EXCLUDED.annual_allowance_days,
+                    carryover_limit_days = EXCLUDED.carryover_limit_days,
+                    is_active = EXCLUDED.is_active,
+                    updated_at = now()
                 RETURNING id
                 """,
-                eid, code, name_en, name_ka, default_days, is_active,
+                eid,
+                code,
+                name_en,
+                name_ka,
+                Decimal(str(default_days)),
+                carryover,
+                is_active,
             )
-            # Create leave balances for each employee
             for emp_id in employee_ids_by_entity[tax_id]:
                 used = random.randint(0, min(5, default_days)) if default_days > 0 else 0
+                opening = Decimal(str(max(default_days - used, 0)))
                 await conn.execute(
                     """
                     INSERT INTO leave_balances (
-                        employee_id, leave_type_id, year,
-                        entitled_days, used_days, pending_days, remaining_days
-                    ) VALUES ($1, $2, 2026, $3, $4, 0, $5)
+                        employee_id, leave_type_id, balance_year,
+                        opening_days, earned_days, used_days, adjusted_days
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT DO NOTHING
                     """,
-                    emp_id, lt_id, Decimal(str(default_days)),
-                    Decimal(str(used)), Decimal(str(default_days - used)),
+                    emp_id,
+                    lt_id,
+                    balance_year,
+                    opening,
+                    Decimal('0'),
+                    Decimal(str(used)),
+                    Decimal('0'),
                 )
     print(f"  ✓ Leave types & balances")
 

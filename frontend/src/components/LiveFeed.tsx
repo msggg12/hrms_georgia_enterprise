@@ -19,12 +19,9 @@ export function LiveFeed(props: { feed: FeedEvent[] }) {
     <article className="panel-card p-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Announcement</h2>
-          <p className="mt-1 text-sm text-slate-500">Recent attendance and device activity</p>
+          <h2 className="text-lg font-semibold text-slate-900">{ka.monitoringCenter}</h2>
+          <p className="mt-1 text-sm text-slate-500">{ka.liveAttendanceFeed} — device / სისტემური ჩანაწერები</p>
         </div>
-        <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">
-          See all
-        </button>
       </div>
 
       <div className="mt-5 space-y-4">

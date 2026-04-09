@@ -60,6 +60,7 @@ from .rbac import AuthorizationError, ensure_can_export_payroll, ensure_can_view
 from .runtime_setup import ensure_runtime_schema
 from .tenant import DEFAULT_FEATURE_FLAGS, resolve_request_tenant
 from .user_experience import UX_ROUTER
+from .connect_suite import INTEGRATIONS_ROUTER
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / 'static'
@@ -188,7 +189,7 @@ class AttendanceOverrideRequest(BaseModel):
 
 
 class WebPunchRequest(BaseModel):
-    direction: str = Field(default='unknown')
+    direction: str = Field(default='auto')
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
 
@@ -1011,6 +1012,7 @@ app.include_router(ASSETS_ROUTER)
 app.include_router(PERFORMANCE_ROUTER)
 app.include_router(ANALYTICS_ROUTER)
 app.include_router(UX_ROUTER)
+app.include_router(INTEGRATIONS_ROUTER)
 app.include_router(MONITORING_ROUTER)
 
 
@@ -2220,8 +2222,25 @@ async def update_shift_pattern(request: Request, pattern_id: UUID, payload: Shif
 async def submit_web_punch(request: Request, payload: WebPunchRequest) -> dict[str, object]:
     actor = await require_actor(request)
     db = get_db_from_request(request)
-    if payload.direction not in {'in', 'out', 'unknown'}:
-        raise HTTPException(status_code=400, detail='მიმართულება უნდა იყოს in, out ან unknown')
+    direction = payload.direction
+    if direction == 'auto':
+        last = await db.fetchrow(
+            """
+            SELECT direction::text AS direction
+              FROM web_punch_events
+             WHERE employee_id = $1
+               AND (punch_ts AT TIME ZONE 'Asia/Tbilisi')::date = (timezone('Asia/Tbilisi', now()))::date
+             ORDER BY punch_ts DESC
+             LIMIT 1
+            """,
+            actor.employee_id,
+        )
+        if last is None or (last['direction'] or '') in {'out', 'unknown'}:
+            direction = 'in'
+        else:
+            direction = 'out'
+    elif direction not in {'in', 'out', 'unknown'}:
+        raise HTTPException(status_code=400, detail='მიმართულება უნდა იყოს auto, in, out ან unknown')
     is_valid, reason = await _validate_web_punch(request, db, actor.legal_entity_id, payload.latitude, payload.longitude)
     punch_id = await db.fetchval(
         """
@@ -2232,7 +2251,7 @@ async def submit_web_punch(request: Request, payload: WebPunchRequest) -> dict[s
         """,
         actor.employee_id,
         actor.legal_entity_id,
-        payload.direction,
+        direction,
         _client_ip(request),
         payload.latitude,
         payload.longitude,
@@ -2241,7 +2260,7 @@ async def submit_web_punch(request: Request, payload: WebPunchRequest) -> dict[s
     )
     if not is_valid:
         raise HTTPException(status_code=403, detail=reason)
-    return {'punch_id': str(punch_id), 'status': 'recorded', 'validation_reason': reason}
+    return {'punch_id': str(punch_id), 'status': 'recorded', 'validation_reason': reason, 'direction': direction}
 
 
 @app.post('/attendance/review-flags/{flag_id}/resolve')

@@ -4,12 +4,12 @@
 
 @layer base {
   :root {
-    --brand-primary: #5746ea;
-    --brand-primary-rgb: 87 70 234;
+    --brand-primary: #2563eb;
+    --brand-primary-rgb: 37 99 235;
     --brand-logo-bg: #ffffff;
-    --page-bg: #fbfbfe;
-    --surface-border: #ebeef5;
-    --muted-text: #8d95a8;
+    --page-bg: #0f172a;
+    --surface-border: #e2e8f0;
+    --muted-text: #94a3b8;
   }
 
   html {
@@ -18,9 +18,8 @@
   }
 
   body {
-    @apply min-h-screen antialiased;
+    @apply min-h-screen antialiased text-slate-800;
     background: var(--page-bg);
-    color: #1f2937;
   }
 
   button:disabled {
@@ -32,12 +31,13 @@
   .panel-card {
     @apply rounded-[22px] border bg-white p-6;
     border-color: var(--surface-border);
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   }
 
   .metric-card {
     @apply rounded-[18px] border bg-white p-5;
     border-color: var(--surface-border);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
   }
 
   .section-kicker {
@@ -123,9 +123,19 @@
   }
 
   .page-layout-card {
-    @apply rounded-[28px] border bg-white;
-    border-color: var(--surface-border);
-    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.04);
+    @apply rounded-[28px] border border-slate-700/40 bg-transparent;
+    box-shadow: none;
+  }
+
+  .shell-dark {
+    @apply bg-slate-900/95 text-slate-100;
+  }
+
+  .shell-dark .section-title,
+  .shell-dark h1,
+  .shell-dark h2,
+  .shell-dark h3 {
+    @apply text-slate-50;
   }
 
   .table-shell {
